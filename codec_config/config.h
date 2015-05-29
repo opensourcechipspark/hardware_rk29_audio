@@ -57,7 +57,6 @@ struct config_route_table
     const struct config_route incall_off;
     const struct config_route voip_off;
 
-    const struct config_route spdif_output;
     const struct config_route hdmi_normal;
 
     const struct config_route usb_normal;

@@ -92,7 +92,6 @@ AudioHardware::AudioHardware() :
     mBluetoothNrec(true),
     mSecRilLibHandle(NULL),
     mRilClient(0),
-    mspdifout(0),
     mActivatedCP(false),
     mDriverOp(DRV_NONE)
 {
@@ -388,7 +387,7 @@ status_t AudioHardware::setMode(int mode)
             ALOGV("setMode() openPcmOut_l()");
             openPcmOut_l();
             setInputSource_l(String8("Default"));
-            if (mOutput != 0)
+            if (mOutput != 0 && AudioSystem::popCount(mOutput->device()) == 1)
                 setIncallPath_l(mOutput->device());
             mInCallAudioMode = true;
         }
@@ -659,7 +658,6 @@ status_t AudioHardware::setIncallPath_l(uint32_t device)
 
 struct pcm *AudioHardware::openPcmOut_l()
 {
-	char property[PROPERTY_VALUE_MAX];	
     ALOGD("openPcmOut_l() mPcmOpenCnt: %d", mPcmOpenCnt);
     if (mPcmOpenCnt++ == 0) {
         if (mPcm != NULL) {
@@ -677,21 +675,7 @@ struct pcm *AudioHardware::openPcmOut_l()
         }
 
         TRACE_DRIVER_IN(DRV_PCM_OPEN)
-		property_get("persist.sys.spdif.enable", property, "0");
-
-		if (strcmp(property,"0") == 0)
-		{
-		     ALOGD("openPcmOut_l() is spk or hp %s",property);
-			 mspdifout = 0;
-          	 mPcm = route_pcm_open(getRouteFromDevice(mOutput->device()), flags);
-		}
-		else
-		{
-		     ALOGD("openPcmOut_l() is spdif %s",property);
-			 mspdifout = 1;
-        	 mPcm = route_pcm_open(28, flags);
-		}
-
+        mPcm = route_pcm_open(getRouteFromDevice(mOutput->device()), flags);
         TRACE_DRIVER_OUT
         if (!pcm_ready(mPcm)) {
             ALOGE("openPcmOut_l() cannot open pcm_out driver: %s\n", pcm_error(mPcm));
@@ -716,18 +700,7 @@ void AudioHardware::closePcmOut_l()
     if (--mPcmOpenCnt == 0) {
         ALOGV("close_l() reset Playback Path to OFF");
         TRACE_DRIVER_IN(DRV_PCM_CLOSE)
-			
-		if ( mspdifout == 0)
-		{
-		     ALOGD("closePcmOut_l() is spk or hp ");
-        	 route_pcm_close(PLAYBACK_OFF_ROUTE);
-		}
-		else
-		{
-		     ALOGD("closePcmOut_l() is spdif");
-        	 route_pcm_close(28);
-			 mspdifout = 0 ;
-		}
+        route_pcm_close(PLAYBACK_OFF_ROUTE);
         TRACE_DRIVER_OUT
         mPcm = NULL;
     }
@@ -773,32 +746,31 @@ unsigned AudioHardware::getVoiceRouteFromDevice(uint32_t device)
     if (mMode != AudioSystem::MODE_IN_CALL && mMode != AudioSystem::MODE_IN_COMMUNICATION)
         return INCALL_OFF_ROUTE;
 
-    switch (device) {
-    case AudioSystem::DEVICE_OUT_EARPIECE:
-        if (mMode == AudioSystem::MODE_IN_CALL) return EARPIECE_INCALL_ROUTE;
-        else return EARPIECE_VOIP_ROUTE;
-    case AudioSystem::DEVICE_OUT_SPEAKER:
-        if (mMode == AudioSystem::MODE_IN_CALL) return SPEAKER_INCALL_ROUTE;
-        else return SPEAKER_VOIP_ROUTE;
-    case AudioSystem::DEVICE_OUT_WIRED_HEADPHONE:
-        if (mMode == AudioSystem::MODE_IN_CALL) return HEADPHONE_INCALL_ROUTE;
-        else return HEADPHONE_VOIP_ROUTE;
-    case AudioSystem::DEVICE_OUT_WIRED_HEADSET:
-        if (mMode == AudioSystem::MODE_IN_CALL) return HEADSET_INCALL_ROUTE;
-        else return HEADSET_VOIP_ROUTE;
-    case AudioSystem::DEVICE_OUT_BLUETOOTH_SCO:
-    case AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_HEADSET:
-    case AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_CARKIT:
+    if (device & AudioSystem::DEVICE_OUT_BLUETOOTH_SCO ||
+        device & AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_HEADSET ||
+        device & AudioSystem::DEVICE_OUT_BLUETOOTH_SCO_CARKIT) {
         if (mMode == AudioSystem::MODE_IN_CALL) return BLUETOOTH_INCALL_ROUTE;
         else return BLUETOOTH_VOIP_ROUTE;
-    case AudioSystem::DEVICE_OUT_AUX_DIGITAL:
-        if (mMode == AudioSystem::MODE_IN_CALL) return EARPIECE_INCALL_ROUTE;
-        else return HDMI_NORMAL_ROUTE;
-    case AudioSystem::DEVICE_OUT_ANLG_DOCK_HEADSET:
-    case AudioSystem::DEVICE_OUT_DGTL_DOCK_HEADSET:
+    } else if (device & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) {
+        if (mMode == AudioSystem::MODE_IN_CALL) return HEADPHONE_INCALL_ROUTE;
+        else return HEADPHONE_VOIP_ROUTE;
+    } else if (device & AudioSystem::DEVICE_OUT_WIRED_HEADSET) {
+        if (mMode == AudioSystem::MODE_IN_CALL) return HEADSET_INCALL_ROUTE;
+        else return HEADSET_VOIP_ROUTE;
+    } else if (device & AudioSystem::DEVICE_OUT_ANLG_DOCK_HEADSET ||
+        device & AudioSystem::DEVICE_OUT_DGTL_DOCK_HEADSET) {
         if (mMode == AudioSystem::MODE_IN_CALL) return EARPIECE_INCALL_ROUTE;
         else return USB_NORMAL_ROUTE;
-    default:
+    } else if (device & AudioSystem::DEVICE_OUT_AUX_DIGITAL) {
+        if (mMode == AudioSystem::MODE_IN_CALL) return EARPIECE_INCALL_ROUTE;
+        else return HDMI_NORMAL_ROUTE;
+    } else if (device & AudioSystem::DEVICE_OUT_EARPIECE) {
+        if (mMode == AudioSystem::MODE_IN_CALL) return EARPIECE_INCALL_ROUTE;
+        else return EARPIECE_VOIP_ROUTE;
+    } else if (device & AudioSystem::DEVICE_OUT_SPEAKER) {
+        if (mMode == AudioSystem::MODE_IN_CALL) return SPEAKER_INCALL_ROUTE;
+        else return SPEAKER_VOIP_ROUTE;
+    } else {
         if (mMode == AudioSystem::MODE_IN_CALL) return INCALL_OFF_ROUTE;
         else return VOIP_OFF_ROUTE;
     }
@@ -1340,20 +1312,22 @@ AudioHardware::AudioStreamInALSA::~AudioStreamInALSA()
             mPcmIn = NULL;
         }
     }
-#ifdef DEBUG_ALSA_IN
-               
-       if(alsa_in_fp)
-               fclose(alsa_in_fp);
-#endif
 
 #if (SPEEX_AGC_ENABLE||SPEEX_DENOISE_ENABLE)
-	if(mSpeexState)
-    	speex_preprocess_state_destroy(mSpeexState);
+    if (mSpeexState) {
+        speex_preprocess_state_destroy(mSpeexState);
+        mSpeexState = NULL;
+    }
     if(mSpeexPcmIn) {
         delete[] mSpeexPcmIn;
         mSpeexPcmIn = NULL;
     }
 #endif //SPEEX_AGC_ENABLE||SPEEX_DENOISE_ENABLE
+
+#ifdef DEBUG_ALSA_IN
+       if(alsa_in_fp)
+               fclose(alsa_in_fp);
+#endif
 }
 status_t AudioHardware::AudioStreamInALSA::setGain(float gain)
 { 
@@ -1562,7 +1536,7 @@ status_t AudioHardware::AudioStreamInALSA::open_l()
 {
     unsigned flags = PCM_IN;
 
-    flags |= (AUDIO_HW_IN_PERIOD_MULT * mInSampleRate / 44100 - 1) << PCM_PERIOD_SZ_SHIFT;
+    flags |= (AUDIO_HW_IN_PERIOD_MULT * mInSampleRate / AUDIO_HW_IN_SAMPLERATE - 1) << PCM_PERIOD_SZ_SHIFT;
     flags |= (AUDIO_HW_IN_PERIOD_CNT - PCM_PERIOD_CNT_MIN)
             << PCM_PERIOD_CNT_SHIFT;
 
@@ -1719,11 +1693,14 @@ status_t AudioHardware::AudioStreamInALSA::setParameters(const String8& keyValue
                 }
             }
 #if (SPEEX_AGC_ENABLE||SPEEX_DENOISE_ENABLE)
-            speex_preprocess_state_destroy(mSpeexState);
-	      if(mSpeexPcmIn) {
+            if (mSpeexState) {
+                speex_preprocess_state_destroy(mSpeexState);
+                mSpeexState = NULL;
+            }
+            if(mSpeexPcmIn) {
                 delete[] mSpeexPcmIn;
                 mSpeexPcmIn = NULL;
-	      }
+            }
 #endif //SPEEX_AGC_ENABLE||SPEEX_DENOISE_ENABLE
 
             int pFormat = AUDIO_HW_IN_FORMAT;
@@ -1778,18 +1755,18 @@ status_t AudioHardware::AudioStreamInALSA::getNextBuffer(AudioHardware::BufferPr
 
     if (mInPcmInBuf == 0) {
         TRACE_DRIVER_IN(DRV_PCM_READ)
-        mReadStatus = pcm_read(mPcm,(void*) mPcmIn, AUDIO_HW_IN_PERIOD_SZ * frameSize() * mInSampleRate / 44100);
+        mReadStatus = pcm_read(mPcm,(void*) mPcmIn, AUDIO_HW_IN_PERIOD_SZ * frameSize() * mInSampleRate / AUDIO_HW_IN_SAMPLERATE);
         TRACE_DRIVER_OUT
         if (mReadStatus != 0) {
             buffer->raw = NULL;
             buffer->frameCount = 0;
             return mReadStatus;
         }
-        mInPcmInBuf = AUDIO_HW_IN_PERIOD_SZ * mInSampleRate / 44100;
+        mInPcmInBuf = AUDIO_HW_IN_PERIOD_SZ * mInSampleRate / AUDIO_HW_IN_SAMPLERATE;
     }
 
     buffer->frameCount = (buffer->frameCount > mInPcmInBuf) ? mInPcmInBuf : buffer->frameCount;
-    buffer->i16 = mPcmIn + (AUDIO_HW_IN_PERIOD_SZ  * mInSampleRate / 44100 - mInPcmInBuf) * mChannelCount;
+    buffer->i16 = mPcmIn + (AUDIO_HW_IN_PERIOD_SZ  * mInSampleRate / AUDIO_HW_IN_SAMPLERATE - mInPcmInBuf) * mChannelCount;
 
     return mReadStatus;
 }

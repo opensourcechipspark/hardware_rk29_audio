@@ -136,7 +136,6 @@ int is_playback_route(unsigned route)
     case PLAYBACK_OFF_ROUTE:
     case INCALL_OFF_ROUTE:
     case VOIP_OFF_ROUTE:
-    case SPDIF_OUTPUT_ROUTE:
     case HDMI_NORMAL_ROUTE:
     case USB_NORMAL_ROUTE:
         return 1;
@@ -269,8 +268,6 @@ const struct config_route *get_route_config(unsigned route)
         return &(route_table->incall_off);
     case VOIP_OFF_ROUTE:
         return &(route_table->voip_off);
-    case SPDIF_OUTPUT_ROUTE:
-        return &(route_table->spdif_output);
     case HDMI_NORMAL_ROUTE:
         return &(route_table->hdmi_normal);
     case USB_NORMAL_ROUTE:
@@ -403,7 +400,6 @@ struct pcm *route_pcm_open(unsigned route, unsigned int flags)
 #else //primary input maybe used for usb
     if (route > BLUETOOTH_SOC_MIC_CAPTURE_ROUTE &&
         route != HDMI_NORMAL_ROUTE &&
-        route != SPDIF_OUTPUT_ROUTE &&
         route != USB_CAPTURE_ROUTE) {
         ALOGV("route %d error for codec or hdmi!", route);
         return NULL;
@@ -519,9 +515,7 @@ int route_pcm_close(unsigned route)
     unsigned i;
 
     if (route != PLAYBACK_OFF_ROUTE &&
-    	route != SPDIF_OUTPUT_ROUTE &&
         route != CAPTURE_OFF_ROUTE &&
-        route != INCALL_OFF_ROUTE &&
         route != INCALL_OFF_ROUTE &&
         route != VOIP_OFF_ROUTE) {
         ALOGE("route_pcm_close() is not a off route");
@@ -530,42 +524,44 @@ int route_pcm_close(unsigned route)
 
     ALOGV("route_pcm_close() route %d", route);
 
-    //set controls
-    if (is_playback_route(route) ? mMixerPlayback : mMixerCapture)
-        route_set_controls(route);
-
-    switch (route) {
-    case  SPDIF_OUTPUT_ROUTE:
-    case  PLAYBACK_OFF_ROUTE://close playback, we need to close device 1 and device 2
-        if (mMixerPlayback) {
-            mixer_close(mMixerPlayback);
-            mMixerPlayback = NULL;
-        }
+    //close pcm
+    if (route == PLAYBACK_OFF_ROUTE) {
         if (mPcm[PCM_DEVICE0_PLAYBACK]) {
             pcm_close(mPcm[PCM_DEVICE0_PLAYBACK]);
             mPcm[PCM_DEVICE0_PLAYBACK] = NULL;
         }
 
+        //close playback, we need to close device 1 and device 2
         for (i = PCM_DEVICE1_PLAYBACK; i < PCM_MAX; i++) {
             if (mPcm[i]) {
                 pcm_close(mPcm[i]);
                 mPcm[i] = NULL;
             }
         }
-        break;
-    case CAPTURE_OFF_ROUTE:
-        if (mMixerCapture) {
-            mixer_close(mMixerCapture);
-            mMixerCapture = NULL;
-        }
+    } else if (route == CAPTURE_OFF_ROUTE) {
         if (mPcm[PCM_DEVICE0_CAPTURE]) {
             pcm_close(mPcm[PCM_DEVICE0_CAPTURE]);
             mPcm[PCM_DEVICE0_CAPTURE] = NULL;
         }
-        break;
-    default:
-        break;
     }
+
+    //set controls
+    if (is_playback_route(route) ? mMixerPlayback : mMixerCapture)
+        route_set_controls(route);
+
+    //close mixer
+    if (route == PLAYBACK_OFF_ROUTE) {
+        if (mMixerPlayback) {
+            mixer_close(mMixerPlayback);
+            mMixerPlayback = NULL;
+        }
+    } else if (route == CAPTURE_OFF_ROUTE) {
+        if (mMixerCapture) {
+            mixer_close(mMixerCapture);
+            mMixerCapture = NULL;
+        }
+    }
+
     return 0;
 }
 

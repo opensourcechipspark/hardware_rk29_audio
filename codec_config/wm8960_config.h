@@ -43,7 +43,7 @@ const struct config_control wm8960_speaker_normal_controls[] = {
     },
     {
         .ctl_name = "Headphone Playback Volume",
-        .int_val = {120, 120},
+        .int_val = {0, 0},
     },
     {
         .ctl_name = "Right Output Mixer PCM Playback Switch",
@@ -365,7 +365,7 @@ const struct config_control wm8960_main_mic_capture_controls[] = {
     },
     {
         .ctl_name = "Right Boost Mixer RINPUT1 Switch",
-        .int_val = {on},
+        .int_val = {off},
     },
     {
         .ctl_name = "Right Boost Mixer RINPUT2 Switch",
@@ -839,12 +839,7 @@ const struct config_route_table wm8960_config_table = {
         .controls = wm8960_voip_off_controls,
         .controls_count = sizeof(wm8960_voip_off_controls) / sizeof(struct config_control),
     },
-	
-	.spdif_output = {
-        .sound_card = 2,
-        .devices = DEVICES_0,
-        .controls_count = 0,
-	},
+
     //hdmi
     .hdmi_normal = {
         .sound_card = 1,
